@@ -1,6 +1,8 @@
+from scooby import in_ipython
 import torch
 from torch import batch_norm, nn
 from torchvision.models import inception_v3
+from collections import OrderedDict
 
 ###################
 # HYPERPARAMETERS #
@@ -72,21 +74,58 @@ def conv(in_channels, out_channels, k_size=5, stride=2, padding=0, bias=False, b
 
     return layers
 
+#Custom layers
+class Identity(nn.Module):
+    def __init__(self):
+        super(Identity, self).__init__()
+
+    def forward(self, x):
+        return x
+
+class WeightedSum(nn.Module):
+    def __init__(self, old_block, new_block):
+        self.old = old_block
+        self.new = new_block
+        self.alpha = 0
+
+    def update_alpha(self, delta):
+        self.alpha += delta
+        self.alpha = min(1, self.alpha)
+
+    def forward(self, x):
+        old_out = self.old(x)
+        new_out = self.new(x)
+
+        return old_out*(1-self.alpha) + new_out*self.alpha
+
 #Network
 #TODO: Reduce initial output from 8x8 to 4x4
 class Generator(nn.Module):
     def __init__(self):
         super(Generator, self).__init__()
 
-        init = conv_transpose(LATENT, F_MAPS*SCALE_INIT, k_size=4, stride=1)
+        init = conv_transpose(LATENT, F_MAPS*SCALE_INIT, k_size=2, stride=1)
         self.model = nn.Sequential()
         self.model.add_module('base', init)
         self.model.add_module('to_rgb', self.to_rgb(depth=0))
 
+        self.base = nn.Sequential()
+        self.base.add_module('conv1', init)
+
+        self.old_head = nn.Sequential(OrderedDict([
+            ('upsample', nn.Upsample(scale_factor=2, mode='nearest')),
+            ('to_rgb', self.to_rgb(depth=0))
+        ]))
+
+        self.new_head = nn.Sequential(OrderedDict([
+            ('conv', conv_transpose(F_MAPS*SCALE_INIT, F_MAPS*4, k_size=4, stride=2, padding=1)),
+            ('to_rgb', self.to_rgb(depth=1))
+        ]))
+
     def to_rgb(self, depth):
         s = int(SCALE_INIT / (2 ** depth))
         layers = []
-        layers.append(nn.ConvTranspose2d(F_MAPS*s, 3, kernel_size=4, stride=2, padding=1))
+        layers.append(nn.ConvTranspose2d(F_MAPS*s, 3, kernel_size=5, stride=1, padding=2))
         layers.append(nn.Tanh())
         return nn.Sequential(*layers)
 
@@ -126,7 +165,6 @@ class Generator(nn.Module):
         new_model.add_module('weighted_sum', WeightedSum(prev_block, new_block))
         self.model = None
         self.model = new_model
-        return
 
     def flush_network(self):
         #Here we need to remove the WeightedSum layer and replace
@@ -136,7 +174,10 @@ class Generator(nn.Module):
         return
 
     def forward(self, x):
-        return self.model(x)
+        x = self.base(x)
+        # x = self.old_head(x)
+        x = self.new_head(x)
+        return x
 
 class Discriminator(nn.Module):
     def __init__(self):
@@ -198,27 +239,5 @@ class Discriminator(nn.Module):
     def forward(self, x):
         return self.model(x)
 
-#Custom layers
-class Identity(nn.Module):
-    def __init__(self):
-        super(Identity, self).__init__()
 
-    def forward(self, x):
-        return x
-
-class WeightedSum(nn.Module):
-    def __init__(self, old_block, new_block):
-        self.old = old_block
-        self.new = new_block
-        self.alpha = 0
-
-    def update_alpha(self, delta):
-        self.alpha += delta
-        self.alpha = min(1, self.alpha)
-
-    def forward(self, x):
-        old_out = self.old(x)
-        new_out = self.new(x)
-
-        return old_out*(1-self.alpha) + new_out*self.alpha
 
