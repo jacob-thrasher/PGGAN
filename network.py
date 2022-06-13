@@ -15,7 +15,7 @@ LATENT      = 100 #nz
 F_MAPS      = 64 #ngf/d
 LR          = 0.0002 #0.0002
 BETAS       = (0.5, 0.999)
-SCALE_INIT  = 8
+SCALE_INIT  = 16
 ###################
 
 scaled_size = IMG_SIZE // 16
@@ -82,101 +82,82 @@ class Identity(nn.Module):
     def forward(self, x):
         return x
 
-class WeightedSum(nn.Module):
-    def __init__(self, old_block, new_block):
-        self.old = old_block
-        self.new = new_block
-        self.alpha = 0
-
-    def update_alpha(self, delta):
-        self.alpha += delta
-        self.alpha = min(1, self.alpha)
-
-    def forward(self, x):
-        old_out = self.old(x)
-        new_out = self.new(x)
-
-        return old_out*(1-self.alpha) + new_out*self.alpha
-
 #Network
-#TODO: Reduce initial output from 8x8 to 4x4
+#TODO: Depth=5 fails, this is due to the scalar math I do, fix that
 class Generator(nn.Module):
-    def __init__(self):
+    def __init__(self, 
+                latent_dim=100, 
+                f_maps=64, 
+                scale_init=16, 
+                a_rate=0.2):
+                
         super(Generator, self).__init__()
 
-        init = conv_transpose(LATENT, F_MAPS*SCALE_INIT, k_size=2, stride=1)
-        self.model = nn.Sequential()
-        self.model.add_module('base', init)
-        self.model.add_module('to_rgb', self.to_rgb(depth=0))
+        self.latent_dim = latent_dim
+        self.f_maps = f_maps
+        self.scale_init = scale_init
+        self.alpha = 0
+        self.a_rate = a_rate
+        self.depth = 0
 
         self.base = nn.Sequential()
-        self.base.add_module('conv1', init)
+        self.base.add_module('conv1', conv_transpose(latent_dim, f_maps*scale_init, k_size=2, stride=1))
 
         self.old_head = nn.Sequential(OrderedDict([
             ('upsample', nn.Upsample(scale_factor=2, mode='nearest')),
             ('to_rgb', self.to_rgb(depth=0))
         ]))
 
+        # self.new_head = nn.Sequential(OrderedDict([
+        #     ('conv', conv_transpose(f_maps*scale_init, f_maps*int(scale_init/2), k_size=4, stride=2, padding=1)),
+        #     ('to_rgb', self.to_rgb(depth=1))
+        # ]))
         self.new_head = nn.Sequential(OrderedDict([
-            ('conv', conv_transpose(F_MAPS*SCALE_INIT, F_MAPS*4, k_size=4, stride=2, padding=1)),
+            ('conv', self.create_new_block(depth=1)),
             ('to_rgb', self.to_rgb(depth=1))
         ]))
 
     def to_rgb(self, depth):
-        s = int(SCALE_INIT / (2 ** depth))
+        s = int(self.scale_init / (2 ** depth))
         layers = []
-        layers.append(nn.ConvTranspose2d(F_MAPS*s, 3, kernel_size=5, stride=1, padding=2))
+        layers.append(nn.ConvTranspose2d(self.f_maps*s, 3, kernel_size=5, stride=1, padding=2))
         layers.append(nn.Tanh())
         return nn.Sequential(*layers)
 
     def create_new_block(self, depth):
-        s = int(SCALE_INIT / (2 ** depth))
+        s = int(self.scale_init / (2 ** depth))
         name = f'convt_{depth}'
-        layers = conv_transpose(F_MAPS*(s*2), F_MAPS*s, k_size=4, stride=2, padding=1)
-        return layers, name
+        layers = conv_transpose(self.f_maps*(s*2), self.f_maps*s, k_size=4, stride=2, padding=1)
+        return layers
+        # return layers, name
 
     def grow(self, depth):
-        new_model = nn.Sequential()
-        old_rgb = nn.Sequential()
+        #Append new_head.conv to base
+        module = self.new_head.conv
+        self.base.add_module(f'conv_{depth}', module)
+        self.base[-1].load_state_dict(module.state_dict())
 
-        #The actual layers of the model are wrapped into a seq 
-        #network itself, so we need to access named_children twice :(
-        for _, old_model in self.model.named_children():
-            for name, module in old_model.named_children():
-                if not name == 'to_rgb':        #Grab old base
-                    new_model.add_module(name, module)
-                    new_model[-1].load_state_dict(module.state_dict())
-                else:     
-                    old_rgb.add_module('to_rgb', module)     
-                    old_rgb[-1].load_state_dict(module.state_dict())
-        
-        # Shove upsampling layer btwn base and output
-        prev_block = nn.Sequential()
-        prev_block.add_module('upsample', nn.Upsample(scale_factor=2, mode='nearest'))
-        prev_block.add_module('old_rgb', old_rgb)
+        #Replace old head:
+        module = self.new_head.to_rgb
+        self.old_head = nn.Sequential(OrderedDict([
+            ('upsample', nn.Upsample(scale_factor=2, mode='nearest')),
+            ('to_rgb', module)
+        ]))
+        self.old_head[-1].load_state_dict(module.state_dict())
 
-        # Create new convolutional block
-        new_layers, lname = self.create_new_block(depth)
-        new_block = nn.Sequential()
-        new_block.add_module(lname, new_layers)
-        new_block.add_module('to_rgb', self.to_rgb(depth))
-
-        #Compute weighted sum
-        new_model.add_module('weighted_sum', WeightedSum(prev_block, new_block))
-        self.model = None
-        self.model = new_model
-
-    def flush_network(self):
-        #Here we need to remove the WeightedSum layer and replace
-        #It with only the new output
-
-        #Call this when alpha==1
-        return
+        #Replace new head:
+        self.new_head = nn.Sequential(OrderedDict([
+            ('conv', self.create_new_block(depth)),
+            ('to_rgb', self.to_rgb(depth))
+        ]))
 
     def forward(self, x):
         x = self.base(x)
-        # x = self.old_head(x)
-        x = self.new_head(x)
+        y = self.old_head(x)
+        z = self.new_head(x)
+
+        print(self.base)
+        print(y.size(), z.size())
         return x
 
 class Discriminator(nn.Module):
