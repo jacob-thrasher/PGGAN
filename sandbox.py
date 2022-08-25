@@ -2,42 +2,22 @@ from network import Generator, Discriminator
 import torch
 
 G = Generator()
+D = Discriminator()
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
-noise = torch.randn(64, 100, 1, 1, device="cpu")
+# noise = torch.randn(64, 100, 1, 1, device="cpu")
+img = torch.randn(64, 3, 4, 4, device=device)
+x = D(img)
+print(x.size())
 
-# for i in range(1, 4):
-#     print(i)
-#     out = G(noise)
-#     print(out.size())
-#     G.grow(depth=i)
+D.grow(depth=1)
+img = torch.randn(64, 3, 8, 8, device=device)
+x = D(img)
+print(x.size())
 
-out = G(noise)
-G.grow(depth=2)
-
-out = G(noise)
-G.grow(depth=3)
-
-out = G(noise)
-G.grow(depth=4)
-
-out = G(noise)
-# G.grow(depth=5)
-
-# out = G(noise)
-
-
-# for name, layer in G.named_children():
-#     print(name, layer)
-#     print(type(layer))
-
-# D = Discriminator()
-
-# print(D(out))
-
-# for name, layer in D.named_children():
-#     for n, l in layer.named_children():
-#         print(n, l)
-
+D.grow(depth=2)
+img = torch.randn(64, 3, 16, 16, device=device)
+x = D(img)
+print(x.size())
 

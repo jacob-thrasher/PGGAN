@@ -41,40 +41,6 @@ def initialize_weights(model):
         nn.init.normal_(model.weight.data, 1, 0.02)
         nn.init.constant_(model.bias.data, 0)
 
-def conv_transpose(in_channels, out_channels, k_size=5, stride=2, padding=0, bias=False, bn=True):
-    if bn:
-        layers = nn.Sequential(
-        nn.ConvTranspose2d(in_channels, out_channels, stride=stride, 
-                            kernel_size=k_size, padding=padding, bias=bias),
-        nn.BatchNorm2d(out_channels),
-        nn.ReLU(inplace=True)
-    )
-    else:
-        layers = nn.Sequential(
-        nn.ConvTranspose2d(in_channels, out_channels, stride=stride, 
-                            kernel_size=k_size, padding=padding, bias=bias),
-        nn.ReLU(inplace=True)
-    )
-
-    return layers
-
-def conv(in_channels, out_channels, k_size=5, stride=2, padding=0, bias=False, bn=True):
-
-    if bn:
-        layers = nn.Sequential(
-        nn.Conv2d(in_channels, out_channels, stride=stride, kernel_size=k_size, padding=padding, bias=bias),
-        nn.BatchNorm2d(out_channels),
-        nn.LeakyReLU(LEAKY_SLOPE, inplace=True)
-    )
-
-    else:
-        layers = nn.Sequential(
-        nn.Conv2d(in_channels, out_channels, stride=stride, kernel_size=k_size, padding=padding, bias=bias),
-        nn.LeakyReLU(LEAKY_SLOPE, inplace=True)
-    )
-
-    return layers
-
 #Custom layers
 class Identity(nn.Module):
     def __init__(self):
@@ -103,8 +69,8 @@ class Conv(nn.Module):
         super().__init__()
         self.do_bn = do_bn
 
-        self.conv = nn.Conv2d(in_channels, out_channels, stride=stride, kernel_size=kernel_size, padding=padding, bias=bias),
-        self.bn = nn.BatchNorm2d(out_channels),
+        self.conv = nn.Conv2d(in_channels, out_channels, stride=stride, kernel_size=kernel_size, padding=padding, bias=bias)
+        self.bn = nn.BatchNorm2d(out_channels)
         self.lrelu = nn.LeakyReLU(leaky_slope, inplace=True)
 
     def forward(self, x):
@@ -114,8 +80,6 @@ class Conv(nn.Module):
 
         return self.lrelu(x)
 
-#Network
-#TODO: Depth=5 fails, this is due to the scalar math I do, fix that
 class Generator(nn.Module):
     def __init__(self, 
                 latent_dim=100, 
@@ -179,89 +143,71 @@ class Generator(nn.Module):
         y = self.old_head(x)
         z = self.new_head(x)
 
-        print(self.base)
-        print(y.size(), z.size())
-        return x
+        # print(self.base)
+        # print(y.size(), z.size())
+
+        return ((1 - self.alpha) * y) + (self.alpha * z)
 
 class Discriminator(nn.Module):
     def __init__(self, 
                 f_maps=64,
                 scale_init=16,
-                a_rate=0.2,
                 channels = 3):
         super(Discriminator, self).__init__()
-        # self.conv_0  = conv(3, F_MAPS, k_size=4, stride=2, padding=1, bn=False)
-        # self.conv_1  = conv(F_MAPS, F_MAPS*2, k_size=4, stride=2, padding=1)
-
-        # self.conv_2  = conv(F_MAPS*2, F_MAPS*4, k_size=4, stride=2, padding=1)
-        # self.conv_3  = conv(F_MAPS*4, F_MAPS*8, k_size=4, stride=2, padding=1)
-        # self.out     = conv(F_MAPS*8, 1, k_size=4, stride=1, padding=0, bn=False)
-        # self.flatten = nn.Flatten()
-        # self.dense   = nn.Linear(4*4*F_MAPS*8, 1)
 
         self.f_maps = f_maps
         self.scale_init = scale_init
-        self.a_rate = a_rate
         self.alpha = 0
         self.depth = 0
 
-        init = conv(3, F_MAPS, k_size=4, stride=2, padding=1, bn=False)
-        self.model = nn.Sequential()
-        self.model.add_module('from_rgb', init)
-        self.model.add_module('out', self.to_output(depth=0))
-
         self.base = nn.Sequential()
-        self.base.add_module('conv_1', Conv(channels, self.f_maps, kernel_size=4, stride=2, padding=1, bn=False))
+        self.base.add_module('from_rgb', Conv(channels, self.f_maps, kernel_size=4, stride=2, padding=1, do_bn=True))
 
+        self.new_head = nn.Sequential(OrderedDict([
+            ('conv', Conv(self.f_maps, self.f_maps*2, kernel_size=4, stride=2, padding=1, do_bn=True)),
+            ('out', self.to_output(depth=1))
+        ]))
         self.old_head = nn.Sequential(OrderedDict([
-            
+            ('pool', nn.AvgPool2d(kernel_size=2)),
+            ('out', self.to_output(depth=0))
         ]))
 
-    def from_rgb(self, depth):
-        return
-
     def to_output(self, depth):
-        s = depth ** 2
-        layers = []
-        layers.append(conv(F_MAPS*s, F_MAPS*(2*s), k_size=4, stride=2, padding=1, bn=False))
-        layers.append(nn.Sigmoid())
+        s = 2 ** depth
+        layers = [
+            nn.Flatten(),
+            nn.Linear(self.f_maps*s, 1),
+            nn.Sigmoid()
+        ]
         return nn.Sequential(*layers)
 
-    def create_new_block(self, depth):
-        s = depth ** 2
-        name = f'conv_{depth}'
-        return conv(F_MAPS*s, F_MAPS*(2*s), k_size=4, stride=2, padding=1), name
-
     def grow(self, depth):
-        new_model = nn.Sequential()
-        old_out = nn.Sequential()
+        # append new_head.conv to base
+        module = self.new_head.conv
+        self.base.add_module(f'conv_{depth}', module)
+        self.base[-1].load_state_dict(module.state_dict())
 
-        for _, old_model in self.model.named_children():
-            for name, module in old_model.named_children():
-                if not name == 'out':        #Grab old base
-                    new_model.add_module(name, module)
-                    new_model[-1].load_state_dict(module.state_dict())
-                else:     
-                    old_out = None          #Just in case               
-                    old_out = module        #Grab old output
+        #Replace old head:
+        module = self.new_head.out
+        self.old_head = nn.Sequential(OrderedDict([
+            ('pool', nn.AvgPool2d(kernel_size=2)),
+            ('out', module)
+        ]))
+        self.old_head[-1].load_state_dict(module.state_dict())
 
-        prev_block = nn.Sequential()
-        prev_block.add_module('downsample', nn.AvgPool2d(kernel_size=2))
-        prev_block.add_module('old_out', old_out)
-
-        new_layers, lname = self.create_new_block(depth)
-        new_block = nn.Sequential()
-        new_block.add_module(lname, new_layers)
-
-
-        return
-
-    def flush_network(self):
-        #Same as in G
-        return
+        #Replace new head:
+        s = 2 ** depth
+        self.new_head = nn.Sequential(OrderedDict([
+            ('conv', Conv(self.f_maps*s, self.f_maps*(2*s), kernel_size=4, stride=2, padding=1, do_bn=True)),
+            ('out', self.to_output(depth=depth+1))
+        ]))
 
     def forward(self, x):
-        return self.model(x)
+        x = self.base(x)
+        y = self.old_head(x)
+        z = self.new_head(x)
+
+        return ((1 - self.alpha) * y) + (self.alpha * z)
 
 
 
