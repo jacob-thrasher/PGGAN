@@ -14,48 +14,26 @@ inception = inception_v3(pretrained=True)
 inception.fc = Identity()
 inception.dropout = Identity()
 inception.eval()
-preprocess = T.Compose([
-    T.Resize(IMG_SIZE),
-    T.CenterCrop(IMG_SIZE),
-    T.ToTensor(),
-    T.Normalize((.5, .5, .5), (.5, .5, .5))
-])
 fid_resize = T.Compose([T.Resize(299)])
 
 class GAN_Dataset(Dataset):
     def __init__(self, d_size, path):
-        f, l = process_images(path, d_size)
-        self.features = f
-        self.length = l
+        self.d_size = d_size
+        self.paths = os.listdir(path)
+        self.preprocess = T.Compose([
+                                    T.Resize(d_size),
+                                    T.CenterCrop(d_size),
+                                    T.ToTensor(),
+                                    T.Normalize((.5, .5, .5), (.5, .5, .5))
+                                ])
 
     def __len__(self):
-        return self.length
+        return len(self.paths)
 
     def __getitem__(self, idx):
-        return self.features[idx]
-
-def process_images(path, d_size):
-    processed = []
-    i = 0
-    # to_tensor = T.ToTensor()
-
-    for filename in os.listdir(path):
-        if i >= 50000:
-            break
-
-        if filename.endswith('jpg'):
-            if (i % 1000 == 0):
-                print("[PREPROCESSING] Processed {} images".format(i))
-
-        loc = os.path.join(path, filename)
-        img = Image.open(loc)
-        img = preprocess(img)
-        
-        processed.append(img)
-        
-        i+=1
-
-    return processed, len(processed)
+        img = Image.open(self.paths[idx])
+        img = self.preprocess(img)
+        return img
 
 def compute_embeddings(real_images, fake_images):
     real_images = fid_resize(real_images)
