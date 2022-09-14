@@ -84,15 +84,13 @@ class Generator(nn.Module):
     def __init__(self, 
                 latent_dim=100, 
                 f_maps=64, 
-                scale_init=16, 
-                a_rate=0.2):
+                scale_init=16):
                 
         super(Generator, self).__init__()
 
         self.f_maps = f_maps
         self.scale_init = scale_init
         self.alpha = 0
-        self.a_rate = a_rate
         self.depth = 0
 
         self.base = nn.Sequential()
@@ -151,18 +149,18 @@ class Generator(nn.Module):
 class Discriminator(nn.Module):
     def __init__(self, 
                 f_maps=64,
-                scale_init=16,
+                base_size=128,
                 channels = 3):
         super(Discriminator, self).__init__()
 
         self.f_maps = f_maps
-        self.scale_init = scale_init
+        self.downsample_factor = base_size // 4 # 4 = initial img size
         self.alpha = 0
         self.depth = 0
 
+        self.downsample = nn.AvgPool2d(kernel_size=self.downsample_factor)
         self.base = nn.Sequential()
         self.base.add_module('from_rgb', Conv(channels, self.f_maps, kernel_size=4, stride=2, padding=1, do_bn=True))
-
         self.new_head = nn.Sequential(OrderedDict([
             ('conv', Conv(self.f_maps, self.f_maps*2, kernel_size=4, stride=2, padding=1, do_bn=True)),
             ('out', self.to_output(depth=1))
@@ -202,7 +200,10 @@ class Discriminator(nn.Module):
             ('out', self.to_output(depth=depth+1))
         ]))
 
+        self.downsample = nn.AvgPool2d(kernel_size=(self.downsample_factor // (2 ** depth)))
+
     def forward(self, x):
+        x = self.downsample(x)
         x = self.base(x)
         y = self.old_head(x)
         z = self.new_head(x)
