@@ -84,10 +84,10 @@ for depth in range(1, int(math.log(IMG_SIZE, 2))-1):
     for epoch in range(epochs):
         print("\n--\n")
         for batch, X in enumerate(dataloader):
-            Gl, Dl, D_x, D_G_z= train_step(X, generator, discriminator, G_optim, D_optim, device, d_pretrain=1)
             generator.alpha = epoch / epochs
             discriminator.alpha = epoch / epochs
-
+            Gl, Dl, D_x, D_G_z= train_step(X, generator, discriminator, G_optim, D_optim, device, d_pretrain=1)
+            
             # Metric reporting
             G_losses.append(Gl.item())
             D_losses.append(Dl.item())
@@ -102,7 +102,7 @@ for depth in range(1, int(math.log(IMG_SIZE, 2))-1):
         
         with torch.no_grad():
             test_batch = generator(fixed_noise).detach().cpu()
-        save_images(test_batch, epoch, n_cols=8)
+        save_images(test_batch, f'D{depth}_E{epoch}', n_cols=8)
 
         # print("[UPDATE] Computing FID score...")
         # fid = compute_fid_numpy(fixed_real, test_batch)

@@ -8,24 +8,14 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 G = Generator().to(device)
 D = Discriminator(base_size=256).to(device)
 
-noise = torch.randn(64, 100, 1, 1, device="cpu").to(device)
-# G.grow(depth=2)
-# G = G.to(device)
+img = torch.randn(64, 3, 256, 256, device="cpu").to(device)
 
-out = G(noise)
-save_image(out, 'out1.png')
+out = D(img)
+print(out.size())
 
-
-G.alpha = 0.25
-
-out = G(noise)
-save_image(out, 'out2.png')
-
-G.alpha = .75
-
-out = G(noise)
-save_image(out, 'out3.png')
-
-
+D.grow(depth=1)
+D = D.to(device)
+out = D(img)
+print(out.size())
 
 

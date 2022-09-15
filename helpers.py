@@ -32,7 +32,7 @@ def save_graph(title, x_label, y_label, epoch, list1, list1_label, list2=None, l
     plt.savefig(filename)
     plt.close()
 
-def save_images(images, epoch, n_cols=None):
+def save_images(images, title, n_cols=None):
   """Displays multiple images in grid format"""
 
   n_cols = n_cols or len(images)
@@ -48,7 +48,7 @@ def save_images(images, epoch, n_cols=None):
       plt.imshow(image_adjusted.permute(1, 2, 0), cmap='binary')
       plt.axis("off")
     
-  filename = "grids/image_epoch_{:04}.png".format(epoch+1)
+  filename = f"grids/"+ title +".png"
   plt.savefig(filename)
   plt.close()
   print("[UPDATE] Image grid saved\n")

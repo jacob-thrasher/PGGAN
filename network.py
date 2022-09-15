@@ -95,7 +95,7 @@ class Generator(nn.Module):
 
         self.upsample = nn.Upsample(size=(256, 256), mode='nearest')
         self.base = nn.Sequential()
-        self.base.add_module('conv_1', ConvTranspose(latent_dim, f_maps*scale_init, kernel_size=2, stride=1))
+        self.base.add_module('conv_0', ConvTranspose(latent_dim, f_maps*scale_init, kernel_size=2, stride=1))
 
         self.old_head = nn.Sequential(OrderedDict([
             ('to_rgb', self.to_rgb(depth=0)),
@@ -116,6 +116,7 @@ class Generator(nn.Module):
         return nn.Sequential(*layers)
 
     def grow(self, depth):
+        depth += 1
         #Append new_head.conv to base
         module = self.new_head.conv
         self.base.add_module(f'conv_{depth}', module)
@@ -140,9 +141,6 @@ class Generator(nn.Module):
         x = self.base(x)
         y = self.old_head(x)
         z = self.new_head(x)
-
-        # print(self.base)
-        # print(y.size(), z.size())
 
         return self.upsample(((1 - self.alpha) * y) + (self.alpha * z))
 
@@ -180,6 +178,7 @@ class Discriminator(nn.Module):
         return nn.Sequential(*layers)
 
     def grow(self, depth):
+        # depth += 1
         # append new_head.conv to base
         module = self.new_head.conv
         self.base.add_module(f'conv_{depth}', module)
