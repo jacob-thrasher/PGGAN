@@ -18,8 +18,9 @@ fid_resize = T.Compose([T.Resize(299)])
 
 class GAN_Dataset(Dataset):
     def __init__(self, d_size, path):
+        self.root = path
         self.d_size = d_size
-        self.paths = os.listdir(path)
+        self.paths = os.listdir(path)[:1000]
         self.preprocess = T.Compose([
                                     T.Resize(d_size),
                                     T.CenterCrop(d_size),
@@ -31,7 +32,8 @@ class GAN_Dataset(Dataset):
         return len(self.paths)
 
     def __getitem__(self, idx):
-        img = Image.open(self.paths[idx])
+        this_path = os.path.join(self.root, self.paths[idx])
+        img = Image.open(this_path)
         img = self.preprocess(img)
         return img
 

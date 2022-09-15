@@ -10,7 +10,7 @@ from collections import OrderedDict
 ###################
 BATCH_SIZE  = 128
 LEAKY_SLOPE = 0.2
-IMG_SIZE    = 64
+IMG_SIZE    = 256
 SCALE       = 16
 LATENT      = 100 #nz
 F_MAPS      = 64 #ngf/d
@@ -93,13 +93,13 @@ class Generator(nn.Module):
         self.alpha = 0
         self.depth = 0
 
+        self.upsample = nn.Upsample(size=(256, 256), mode='nearest')
         self.base = nn.Sequential()
-        # self.base.add_module('conv_1', conv_transpose(latent_dim, f_maps*scale_init, k_size=2, stride=1))
         self.base.add_module('conv_1', ConvTranspose(latent_dim, f_maps*scale_init, kernel_size=2, stride=1))
 
         self.old_head = nn.Sequential(OrderedDict([
-            ('upsample', nn.Upsample(scale_factor=2, mode='nearest')),
-            ('to_rgb', self.to_rgb(depth=0))
+            ('to_rgb', self.to_rgb(depth=0)),
+            ('upsample', nn.Upsample(scale_factor=2, mode='nearest'))
         ]))
 
         s = int(self.scale_init / 2)
@@ -144,7 +144,7 @@ class Generator(nn.Module):
         # print(self.base)
         # print(y.size(), z.size())
 
-        return ((1 - self.alpha) * y) + (self.alpha * z)
+        return self.upsample(((1 - self.alpha) * y) + (self.alpha * z))
 
 class Discriminator(nn.Module):
     def __init__(self, 
