@@ -93,6 +93,8 @@ class Generator(nn.Module):
         self.alpha = 0
         self.depth = 0
 
+        self.rgb = self.to_rgb(depth=1)
+
         self.upsample = nn.Upsample(size=(256, 256), mode='nearest')
         self.base = nn.Sequential()
         self.base.add_module('conv_0', ConvTranspose(latent_dim, f_maps*scale_init, kernel_size=2, stride=1))
@@ -125,10 +127,10 @@ class Generator(nn.Module):
         #Replace old head:
         module = self.new_head.to_rgb
         self.old_head = nn.Sequential(OrderedDict([
-            ('upsample', nn.Upsample(scale_factor=2, mode='nearest')),
-            ('to_rgb', module)
+            ('to_rgb', module),
+            ('upsample', nn.Upsample(scale_factor=2, mode='nearest'))
         ]))
-        self.old_head[-1].load_state_dict(module.state_dict())
+        self.old_head[0].load_state_dict(module.state_dict())
 
         #Replace new head:
         s = int(self.scale_init / (2 ** depth))
