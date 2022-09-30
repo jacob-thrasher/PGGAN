@@ -83,13 +83,11 @@ out      = ''
 for depth in range(1, int(math.log(IMG_SIZE, 2))-1):
     for epoch in range(epochs):
         print("\n--\n")
-        print(f'G_alpha: {generator.alpha} | D_alpha {discriminator.alpha}')
         for batch, X in enumerate(dataloader):
             generator.alpha = epoch / epochs
             discriminator.alpha = epoch / epochs
-            
+
             Gl, Dl, D_x, D_G_z= train_step(X, generator, discriminator, G_optim, D_optim, device, d_pretrain=1)
-            
             # Metric reporting
             G_losses.append(Gl.item())
             D_losses.append(Dl.item())
@@ -100,7 +98,7 @@ for depth in range(1, int(math.log(IMG_SIZE, 2))-1):
                 print(out)
                 logging.info(out)
 
-        save_graph(f'D{depth}_loss', "Iterations", "Loss", epoch, G_losses, "G", D_losses, "D")
+        save_graph(f'loss', "Iterations", "Loss", epoch, G_losses, "G", D_losses, "D")
         
         with torch.no_grad():
             test_batch = generator(fixed_noise).detach().cpu()

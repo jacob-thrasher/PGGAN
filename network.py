@@ -8,14 +8,14 @@ from collections import OrderedDict
 ###################
 # HYPERPARAMETERS #
 ###################
-BATCH_SIZE  = 128
+BATCH_SIZE  = 32
 LEAKY_SLOPE = 0.2
 IMG_SIZE    = 256
 SCALE       = 16
 LATENT      = 100 #nz
 F_MAPS      = 64 #ngf/d
 LR          = 0.0002 #0.0002
-BETAS       = (0.5, 0.999)
+BETAS       = (0, 0.99)
 SCALE_INIT  = 16
 ###################
 
@@ -56,7 +56,8 @@ class ConvTranspose(nn.Module):
 
         self.convt = nn.ConvTranspose2d(in_channels, out_channels, stride=stride, kernel_size=kernel_size, padding=padding, bias=bias)
         self.bn = nn.BatchNorm2d(out_channels)
-        self.relu = nn.ReLU(inplace=True)
+        # self.relu = nn.ReLU(inplace=True)
+        self.relu = nn.LeakyReLU(0.2, inplace=True)
 
     def forward(self, x):
         x = self.convt(x)
@@ -80,11 +81,30 @@ class Conv(nn.Module):
 
         return self.lrelu(x)
 
+class MinibatchStddev(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        #Compute stddev of all feature maps
+        fmap_mean = torch.mean(x)
+        sq = torch.square(torch.mean(x - fmap_mean))
+        stddev = torch.sqrt(torch.mean(sq))
+
+        #Calculate mean of stddev maps
+        avg_stddev = torch.mean(stddev)
+        shape = x.size()
+        minibatch = torch.tile(avg_stddev, dims=[shape[0], 1, shape[2], shape[3]])
+
+        #cat to input
+        return torch.cat([x, minibatch], dim=1)
+
 class Generator(nn.Module):
     def __init__(self, 
                 latent_dim=100, 
                 f_maps=64, 
-                scale_init=16):
+                scale_init=16,
+                d_size=256):
                 
         super(Generator, self).__init__()
 
@@ -95,7 +115,7 @@ class Generator(nn.Module):
 
         self.rgb = self.to_rgb(depth=1)
 
-        self.upsample = nn.Upsample(size=(256, 256), mode='nearest')
+        self.upsample = nn.Upsample(size=(d_size, d_size), mode='nearest')
         self.base = nn.Sequential()
         self.base.add_module('conv_0', ConvTranspose(latent_dim, f_maps*scale_init, kernel_size=2, stride=1))
 
@@ -145,6 +165,7 @@ class Generator(nn.Module):
         z = self.new_head(x)
 
         return self.upsample(((1 - self.alpha) * y) + (self.alpha * z))
+        # return ((1 - self.alpha) * y) + (self.alpha * z)
 
 class Discriminator(nn.Module):
     def __init__(self, 
@@ -161,6 +182,8 @@ class Discriminator(nn.Module):
         self.downsample = nn.AvgPool2d(kernel_size=self.downsample_factor)
         self.base = nn.Sequential()
         self.base.add_module('from_rgb', Conv(channels, self.f_maps, kernel_size=4, stride=2, padding=1, do_bn=True))
+        self.minibatch = MinibatchStddev()
+
         self.new_head = nn.Sequential(OrderedDict([
             ('conv', Conv(self.f_maps, self.f_maps*2, kernel_size=4, stride=2, padding=1, do_bn=True)),
             ('out', self.to_output(depth=1))
@@ -173,6 +196,7 @@ class Discriminator(nn.Module):
     def to_output(self, depth):
         s = 2 ** depth
         layers = [
+            # MinibatchStddev(),
             nn.Flatten(),
             nn.Linear(self.f_maps*s, 1),
             nn.Sigmoid()

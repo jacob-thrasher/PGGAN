@@ -26,7 +26,7 @@ def save_graph(title, x_label, y_label, epoch, list1, list1_label, list2=None, l
     # plt.show()
 
     #TODO: Save to folder bc right now it isn't working for some reason
-    filename = "metrics/" + title + "_epoch_{:04}.png".format(epoch+1)
+    filename = "metrics/" + title + ".png"
     # dir = os.path.join("metrics/"+filename)
     
     plt.savefig(filename)

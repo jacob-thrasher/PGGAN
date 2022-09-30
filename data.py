@@ -20,7 +20,7 @@ class GAN_Dataset(Dataset):
     def __init__(self, d_size, path):
         self.root = path
         self.d_size = d_size
-        self.paths = os.listdir(path)[:1000]
+        self.paths = os.listdir(path)[:50000]
         self.preprocess = T.Compose([
                                     T.Resize(d_size),
                                     T.CenterCrop(d_size),
